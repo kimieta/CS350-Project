@@ -1,0 +1,345 @@
+library(shiny)
+library(imager)
+library(animation)
+library(dplyr)
+library(ggplot2)
+library(shinycssloaders)
+library(magick)
+library(bslib)
+
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+    theme = bs_theme(version = 4, bootswatch = "lux"),
+    # Application title
+    titlePanel("Seeded Growing Region"),
+
+    # Sidebar with a slider input for number of bins 
+    sidebarLayout(
+        sidebarPanel(
+            fileInput("myFile", "Choose a file", 
+                      accept = c('image/png', 'image/jpeg')),
+            sliderInput("sclrez",
+                        "Resolution factor:",
+                        min = 1,
+                        max = 100,
+                        value = 50),
+            numericInput("x_seed_point",
+                        "Seed (x co-ordinate):",
+                        value = 30),
+            numericInput("y_seed_point",
+                        "Seed (y co-ordinate):",
+                        value = 15),
+            selectInput("col_choice",
+                        "Colour:", choices = list("Red" = "#FF0000", "Blue" = "#0000FF",
+                                                  "Yellow" = "#FFFF00", "White" = "#FFFFFF"), selected =  "#ff000"),
+            numericInput("thres",
+                         "Threshold (0 - 1):",
+                         value = 0.3),
+            submitButton()
+        ),
+      
+      # Show a plot of the generated distribution
+      mainPanel(
+        tabsetPanel(
+          tabPanel("Image", plotOutput("plot1") %>% withSpinner(color="#0dc5c1")), 
+          tabPanel("Outline", plotOutput("plot2")  %>% withSpinner(color="#0dc5c1")), 
+          tabPanel("SGR process",imageOutput("plot3") %>% withSpinner(color="#0dc5c1"))
+        )
+      )
+    )
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output, session) {
+  
+  output$plot1 <- renderPlot({
+    
+    # function to resize image by scale factor factor, e.g. factor 2 --> 50% size of image
+    img_resizer <- function(img, factor){
+      reimage <- resize(img, dim(img)[1]/factor, dim(img)[2]/factor)
+      return(reimage)
+    }
+    
+    image <- load.image('C:/Users/kimnt/Documents/Y3/Project/Code/2021_Long COVID data files/ACUTE COVID_DIABETES-CONTROLS_ThT_before trypsin/D15_naive_ThT_04.jpg')
+    
+    # image resized
+    reimage <- img_resizer(image, input$sclrez)
+    
+    grayim <- grayscale(reimage, method = "Luma", drop = TRUE)
+    graydata <- as.data.frame(grayim)
+    
+    # choosing the seed
+    selected_point <- filter(graydata, x == input$x_seed_point & y == input$y_seed_point)
+    seed_greyval <- graydata[graydata$x == input$x_seed_point & graydata$y == input$y_seed_point, ][3]
+    # choosing the threshold
+    threshold <- 0.3
+    
+    imgdata <- as.data.frame(reimage, wide="c") %>% mutate(rgb.val=rgb(c.1,c.2,c.3))
+    
+    # function that changes a specific pixels color to red, and prints current state 
+    # takes in the images RGB dataframe
+    # returns the dataframe with edited pixel
+    color_changer <- function(im_datafr, x_val, y_val){
+      # setting the specific pixel to red
+      im_datafr[im_datafr$x == x_val & im_datafr$y == y_val, ][6] <- input$col_choice
+      plot <- ggplot(im_datafr, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
+      
+      file_name <- paste(x_val, y_val, "_plot.jpg", sep = "")
+      ggsave(filename = file_name, plot = plot)
+      
+      return(im_datafr)
+    }
+    
+    imgdata <- color_changer(imgdata, input$x_seed_point, input$y_seed_point)
+    
+    ggplot(imgdata, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
+    
+  })
+  
+  
+  output$plot2 <- renderPlot({
+    
+    image <- load.image('C:/Users/kimnt/Documents/Y3/Project/Code/2021_Long COVID data files/ACUTE COVID_DIABETES-CONTROLS_ThT_before trypsin/D15_naive_ThT_04.jpg')
+    
+    # function to resize image by scale factor factor, e.g. factor 2 --> 50% size of image
+    img_resizer <- function(img, factor){
+      reimage <- resize(img, dim(image)[1]/factor, dim(img)[2]/factor)
+      return(reimage)
+    }
+    
+    # image resized to 14%
+    reimage <- img_resizer(image, input$sclrez)
+    
+    grayim <- grayscale(reimage, method = "Luma", drop = TRUE)
+    graydata <- as.data.frame(grayim)
+    
+    # choosing the seed
+    selected_point <- filter(graydata, x == input$x_seed_point & y == input$y_seed_point)
+    seed_greyval <- graydata[graydata$x == input$x_seed_point & graydata$y == input$y_seed_point, ][3]
+    # choosing the threshold
+    threshold <- input$thres
+    
+    imgdata <- as.data.frame(reimage, wide="c") %>% mutate(rgb.val=rgb(c.1,c.2,c.3))
+    
+    # function that changes a specific pixels color to red, and prints current state 
+    # takes in the images RGB dataframe
+    # returns the dataframe with edited pixel
+    color_changer <- function(im_datafr, x_val, y_val){
+      # setting the specific pixel to red
+      im_datafr[im_datafr$x == x_val & im_datafr$y == y_val, ][6] <- input$col_choice
+      plot <- ggplot(im_datafr, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
+      
+      file_name <- paste(x_val, y_val, "_plot.jpg", sep = "")
+      ggsave(filename = file_name, plot = plot)
+      
+      return(im_datafr)
+    }
+    
+    imgdata <- color_changer(imgdata, input$x_seed_point, input$y_seed_point)
+    
+    # indicator for CORNER pointer translation
+    # only 4 possible corners, so each quadrant is like top, bottom: left or right
+    # each CORNER pointer moves onto THREE new pointers, one corner, two edges
+    # if the pointer goes left, we will move the pixel one unit left, so by -1 (on x-axis)
+    # similar for right, up, and down (up and down is on the y-axis)
+    # take in x and y values, return pointer (x,y) with new x and y values
+    corner_pointers <- function(quadrant, x_val, y_val){
+      # top left, movement up and left
+      if (quadrant == 1){
+        CORNER_pointer <- c(x_val-1, y_val+1)
+        EDGE_pointer1 <- c(x_val, y_val+1)
+        EDGE_pointer2 <- c(x_val-1, y_val)
+        # top right, movement up and right
+      } else if (quadrant == 2){
+        CORNER_pointer <- c(x_val+1, y_val+1) 
+        EDGE_pointer1 <- c(x_val, y_val+1)
+        EDGE_pointer2 <- c(x_val+1, y_val)
+        # bottom right, movement down and right
+      } else if (quadrant == 3){
+        CORNER_pointer <- c(x_val+1, y_val-1)
+        EDGE_pointer1 <- c(x_val, y_val-1)
+        EDGE_pointer2 <- c(x_val+1, y_val)
+        # bottom left, movement down and left 
+      } else {
+        CORNER_pointer <- c(x_val-1, y_val-1)
+        EDGE_pointer1 <- c(x_val, y_val-1)
+        EDGE_pointer2 <- c(x_val-1, y_val)
+      }
+      
+      pointers_list <- list(CORNER_pointer, EDGE_pointer1, EDGE_pointer2)
+      return(pointers_list)
+    }
+    
+    # function for EDGE pointers movement
+    # they can only go up, down, left or right
+    edge_pointers <- function(direction, x_val, y_val){
+      if (direction == "up"){
+        pointer <- c(x_val, y_val+1)
+      } else if (direction == "down") {
+        pointer <- c(x_val, y_val-1)
+      } else if (direction == "right") {
+        pointer <- c(x_val+1, y_val)
+      } else if (direction == "left") {
+        pointer <- c(x_val-1, y_val)
+      }
+      return(pointer)
+    }
+    
+    # recurrence relation to assign each pixel to a group (seed or not)
+    # if it is, add it to the seed set
+    # if it doesn't reach the threshold, stop the pointer, this is the edge
+    # so then start to create the outline 
+    
+    # there are 8 starting pointes, each pointer of the seed will branch out
+    # until the threshold is no longer met 
+    # getting our first pointers 
+    x_val <- selected_point$x
+    y_val <- selected_point$y
+    EDGE_up <- edge_pointers("up", x_val, y_val)
+    EDGE_down <- edge_pointers("down", x_val, y_val)
+    EDGE_right <- edge_pointers("right", x_val, y_val)
+    EDGE_left <- edge_pointers("left", x_val, y_val)
+    CORNER_q1 <- corner_pointers(1, x_val, y_val) # contains 3 pointers
+    CORNER_q2 <- corner_pointers(2, x_val, y_val)
+    CORNER_q3 <- corner_pointers(3, x_val, y_val)
+    CORNER_q4 <- corner_pointers(4, x_val, y_val) # CORNER_q4[[1]] is the corner pointer
+    
+    # checking if the greyscale value is close by threshold value
+    checker_edge <- function(pointer, direction, data){
+      x_val <- pointer[1]
+      y_val <- pointer[2]
+      
+      # getting the row from the dataframe with these coordinates
+      row_data <- graydata[graydata$x == x_val & graydata$y == y_val, ]
+      # getting the gayscale value of the pixel
+      gray_val <- row_data[3]
+      
+      
+      if (abs(seed_greyval - gray_val) < threshold){
+        pointer <- edge_pointers(direction, x_val, y_val)
+        data <- checker_edge(pointer, direction, data)
+        
+      } else {
+        data <- color_changer(data, x_val, y_val)
+        
+      }
+      
+      return(data)
+    }
+    
+    # with corners, we can move in three directions
+    # the diagonal, and either L/R or Up/Down, dependant on its quadrant
+    # note the corner will always move in the same quadrant
+    # take in pointers coming out of the corner
+    checker_corner <- function(pointer_list, direction, data){
+      
+      # case one, the edge pointers
+      
+      LR_pointer <- pointer_list[[2]]
+      updown_pointer <- pointer_list[[3]]
+      
+      # determining the direction of the edge pointers from a corner pointer
+      # based on the quadrant it is in
+      if (direction == 1 | direction == 4){
+        LR <- "left"
+      } else {
+        LR <- "right"
+      }
+      
+      if (direction == 1 | direction == 2) {
+        updown <- "up"
+      } else {
+        updown <- "down"
+      }
+      
+      data <- checker_edge(LR_pointer, LR, data)
+      data <- checker_edge(updown_pointer, updown, data)
+      
+      # case two, the corner specifically 
+      corner_pointer <- pointer_list[[1]]
+      x_val <- corner_pointer[1]
+      y_val <- corner_pointer[2]
+      
+      # getting the row from the dataframe with these coordinates
+      row_data <- graydata[graydata$x == x_val & graydata$y == y_val, ]
+      # getting the gayscale value of the pixel
+      gray_val <- row_data[3]
+      
+      if (abs(seed_greyval - gray_val) < threshold){
+        corner_pointer <- corner_pointers(direction, x_val, y_val)
+        data <- checker_corner(corner_pointer, direction, data)
+        
+      } else {
+        data <- color_changer(data, x_val, y_val)
+      }
+      
+      return(data)
+      
+    }
+    
+    
+    imgdata <- checker_corner(CORNER_q1, 1, imgdata)
+    imgdata <- checker_edge(EDGE_up, "up", imgdata)
+    imgdata <- checker_corner(CORNER_q2, 2, imgdata)
+    imgdata <- checker_edge(EDGE_right, "right", imgdata)
+    imgdata <- checker_corner(CORNER_q3, 3, imgdata)
+    imgdata <- checker_edge(EDGE_down, "down", imgdata)
+    imgdata <- checker_corner(CORNER_q4, 4, imgdata)
+    imgdata <- checker_edge(EDGE_left, "left", imgdata)
+    
+    ###### making the animation and saving it to the file
+    
+    # getting the images that are saved in the file
+    # plotting the images
+    details = file.info(list.files(pattern="_plot"))
+    details = details[with(details, order(as.POSIXct(mtime))), ]
+    files = rownames(details)
+    
+    animation::saveGIF(
+      expr = {
+        for(i in 1:length(files)){
+          im <- load.image(files[i])
+          plot(im)
+        }
+      },
+      movie.name = "outlining.gif"
+    )
+    
+    # saving gif to file after speeding it up
+    img <- magick::image_read("outlining.gif")
+    img <- image_animate(img, fps = 10)
+    
+    image_write(image = img,
+                path = "outlining.gif")
+    
+    
+    # delete position images to refresh for running next time
+    
+    for (fn in files) {
+      #Delete file if it exists
+      file.remove(fn)
+    }
+   
+    
+    #####
+    
+    ggplot(imgdata, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
+  })
+  
+  output$plot3 <- renderImage({
+
+    list(src = "outlining.gif", contentType = "image/gif")
+    
+    
+  }, deleteFile = FALSE)
+  
+
+  
+  
+
+  
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
