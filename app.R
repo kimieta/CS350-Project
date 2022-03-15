@@ -30,18 +30,36 @@ ui <- fluidPage(
             numericInput("y_seed_point",
                         "Seed (y co-ordinate):",
                         value = 15),
-            selectInput("col_choice",
-                        "Colour:", choices = list("Red" = "#FF0000", "Blue" = "#0000FF",
-                                                  "Yellow" = "#FFFF00", "White" = "#FFFFFF"), selected =  "#ff000"),
             numericInput("thres",
                          "Threshold (0 - 1):",
                          value = 0.3),
+            selectInput("col_choice",
+                        "Colour:", choices = list("Red" = "#FF0000", "Blue" = "#0000FF",
+                                                  "Yellow" = "#FFFF00", "White" = "#FFFFFF"), selected =  "#ff000"),
+            
             submitButton()
         ),
       
       # Show a plot of the generated distribution
       mainPanel(
         tabsetPanel(
+          tabPanel("Information",h2("Information Page"),
+                   h4("Purpose"),
+                   p("Seeded Growing Region algorithm for image segmentation, in order to outline the region of interest in an image (for one structure only)."),
+                   br(),
+                   h4("Inputs"),
+                   p("Choose a file: The file path to the image to perform this algorithm on."),
+                   p("Resolution factor: The resolution you want the image to analysed, lower resolution images will take less time compared to higher resolutions."),
+                   p("Seed (x co-ordinate) and Seed (y co-ordinate): The starting coordinate of the seed on the image to initialise the algorithm on. "),
+                   p("Threshold (0 - 1): The threshold for differentiating what belongs in the seed group and what doesn't."),
+                   p("Colour: The colour of the outline, purely as an extra feature."),
+                   br(),
+                   h4("Language"),
+                   p("R version 4.1.1, application created using RShiny."),
+                   br(),
+                   h4("Github"),
+                   a("https://github.com/kimieta/CS350-Project"),
+                   br()),
           tabPanel("Image", plotOutput("plot1") %>% withSpinner(color="#0dc5c1")), 
           tabPanel("Outline", plotOutput("plot2")  %>% withSpinner(color="#0dc5c1")), 
           tabPanel("SGR process",imageOutput("plot3") %>% withSpinner(color="#0dc5c1"))
@@ -333,8 +351,6 @@ server <- function(input, output, session) {
     
     
   }, deleteFile = FALSE)
-  
-
   
   
 
