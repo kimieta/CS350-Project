@@ -1,0 +1,79 @@
+---
+title: 'blankspace simulations'
+author: "Kim Ta"
+date: "09/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r requiredPackages}
+# uncomment the following lines to install required packages
+#install.packages("tidyverse")
+#install.packages("colocr")
+#install.packages("magick")
+```
+
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(colocr)
+library(magick)
+```
+### Running Pearsons correlation value on:
+
+Simulation 1: Original image (300 x 300 pixels)
+
+```{r simplePearson}
+.pearson(image_load("green_original.tiff"),
+         image_load("blue_original.tiff"))
+```
+Simulation 2: Original with extra blank space (400 x 400 pixels)
+
+```{r extra}
+.pearson(image_load("green_extra.tiff"),
+         image_load("blue_extra.tiff"))
+
+```
+Simulation 3: Original image with a lot of extra blank space (700 x 700 pixels)
+
+```{r bextra}
+.pearson(image_load("green_bextra.tiff"),
+         image_load("blue_bextra.tiff"))
+
+```
+Simulation 4: Cropped image (160 x 260 pixels)
+
+
+```{r cropped}
+.pearson(image_load("green_crop.tiff"),
+         image_load("blue_crop.tiff"))
+
+```
+
+Simulation 5: random section of the cell (100 x 100 pixels)
+
+```{r subsection}
+.pearson(image_load("green.tif"),
+         image_load("blue.tif"))
+```
+
+
+
+### Running Manders correlation value on:
+
+Simulation 1
+
+```{r simpleManders}
+
+.manders(image_load("green_original.tiff"),
+         image_load("blue_original.tiff"))
+```
+Simulation 4
+```{r cropped}
+.manders(image_load("green_crop.tiff"),
+         image_load("blue_crop.tiff"))
+
+```
