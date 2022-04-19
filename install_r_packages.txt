@@ -1,8 +1,0 @@
-install.packages("shiny")
-install.packages("imager")
-install.packages("animation")
-install.packages("dplyr")
-install.packages("ggplot2")
-install.packages("shinycssloaders")
-install.packages("magick")
-install.packages("bslib")
