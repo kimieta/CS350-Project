@@ -60,7 +60,7 @@ ui <- fluidPage(
                    h4("Github"),
                    a("https://github.com/kimieta/CS350-Project"),
                    br()),
-          tabPanel("Image", plotOutput("plot1") %>% withSpinner(color="#0dc5c1")), 
+          tabPanel("Image", plotOutput("plot1") %>% withSpinner(color="#0dc5c1")),
           tabPanel("Outline", plotOutput("plot2")  %>% withSpinner(color="#0dc5c1")), 
           tabPanel("SGR process",imageOutput("plot3") %>% withSpinner(color="#0dc5c1"))
         )
@@ -68,141 +68,219 @@ ui <- fluidPage(
     )
 )
 
-# Define server logic required to draw a histogram
-server <- function(input, output, session) {
+# functions ------
+
+#' Resizes image by given scale factor
+#'
+#' @param img: Image 
+#' @param factor: scale factor 
+#'
+#' @return reimage: resized image
+#'
+#' @example e.g. factor 2 --> 50% size of image
+
+img_resizer <- function(img, factor){
+  reimage <- resize(img, dim(img)[1]/factor, dim(img)[2]/factor)
+  return(reimage)
+}
+
+
+#' Produces resized version of uploaded image
+#'
+#' @param f_input: original file input path 
+#' @param res: resolution choice
+#'
+#' @return reimage: resized image
+
+get_reszimage <- function(f_input, res){
+  # getting the file name
+  file_name <- (f_input)$name
   
+  # creating path to copied image and putting it in the right format
+  file_path <- paste("c:/temp/", file_name)
+  file_path <- gsub("/", "\\\\", file_path)
+  file_path <- gsub(" ","", file_path)
+  
+  # loading the image
+  image <- load.image(file_path)
+  
+  # image resized
+  reimage <- img_resizer(image, res)
+  
+  return(reimage)
+  
+}
+
+#' Change the colour of a specific pixel in the image
+#'
+#' @param im_datafr: data frame - RBG dataframe version of image 
+#' @param x_val: integer - x co-ordinate of pixel to change colour
+#' @param y_val: integer - y co-ordinate of pixel to change colour
+#' @param col: hex-digit colour value 
+#'
+#' @return im_datafr: data frame - RGB dataframe version of image with changed pixel
+
+color_changer <- function(im_datafr, x_val, y_val, col){
+  # setting the specific pixel to red
+  im_datafr[im_datafr$x == x_val & im_datafr$y == y_val, ][6] <- col
+  plot <- ggplot(im_datafr, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
+  
+  file_name <- paste(x_val, y_val, "_plot.jpg", sep = "")
+  ggsave(filename = file_name, plot = plot)
+  
+  return(im_datafr)
+}
+
+#' Indicator for CORNER pointer translation
+#'
+#' @param quadrant: integer - indication of direction for pointer to move 
+#' @param x_val: integer - x co-ordinate of pointer
+#' @param y_val: integer - y co-ordinate of pointer
+#'
+#' @return pointers_list: list - new pointers created
+#' only 4 possible corners, so each quadrant is like top, bottom: left or right
+#' each CORNER pointer moves onto THREE new pointers, one corner, two edges
+#' if the pointer goes left, we will move the pixel one unit left, so by -1 (on x-axis)
+#' similar for right, up, and down (up and down is on the y-axis)
+#' take in x and y values, return pointer (x,y) with new x and y values
+
+corner_pointers <- function(quadrant, x_val, y_val){
+  # top left, movement up and left
+  if (quadrant == 1){
+    CORNER_pointer <- c(x_val-1, y_val+1)
+    EDGE_pointer1 <- c(x_val, y_val+1)
+    EDGE_pointer2 <- c(x_val-1, y_val)
+    # top right, movement up and right
+  } else if (quadrant == 2){
+    CORNER_pointer <- c(x_val+1, y_val+1) 
+    EDGE_pointer1 <- c(x_val, y_val+1)
+    EDGE_pointer2 <- c(x_val+1, y_val)
+    # bottom right, movement down and right
+  } else if (quadrant == 3){
+    CORNER_pointer <- c(x_val+1, y_val-1)
+    EDGE_pointer1 <- c(x_val, y_val-1)
+    EDGE_pointer2 <- c(x_val+1, y_val)
+    # bottom left, movement down and left 
+  } else {
+    CORNER_pointer <- c(x_val-1, y_val-1)
+    EDGE_pointer1 <- c(x_val, y_val-1)
+    EDGE_pointer2 <- c(x_val-1, y_val)
+  }
+  
+  pointers_list <- list(CORNER_pointer, EDGE_pointer1, EDGE_pointer2)
+  return(pointers_list)
+}
+
+#' Indicator for EDGE pointer translation
+#'
+#' @param direction: integer - indication of direction for pointer to move 
+#' @param x_val: integer - x co-ordinate of pointer
+#' @param y_val: integer - y co-ordinate of pointer
+#'
+#' @return pointer: vector - new pointer created
+#' they can only go up, down, left or right
+
+edge_pointers <- function(direction, x_val, y_val){
+  if (direction == "up"){
+    pointer <- c(x_val, y_val+1)
+  } else if (direction == "down") {
+    pointer <- c(x_val, y_val-1)
+  } else if (direction == "right") {
+    pointer <- c(x_val+1, y_val)
+  } else if (direction == "left") {
+    pointer <- c(x_val-1, y_val)
+  }
+  return(pointer)
+}
+
+#' Validation and error checking to make sure seed coord is valid
+#'
+#' @param x: integer - x co-ordinate of seed
+#' @param y: integer - y co-ordinate of seed
+#' @param dimension: integer - max number of pixels 
+#' @param indicator: binary - indicating seed alone or seed and threshold (0/1) 
+#'
+#' @return customised error message
+
+validator <- function(x, y, dimension, indicator){
+  if ((x %in% 1:dimension)&(y %in% 1:dimension)) {
+    return(paste("You have chosen coordinate (", x, ',', y,")"))
+  } else if (indicator == 0){
+    stop(
+      paste("The x and y seed values need to be between 1 and ", dimension, ",
+            Current seed values are ", x, " and ", y, ".")
+    )
+  } else {
+    stop("An outline cannot be produced with the chosen threshold or seed value,please try again with different inputs.
+    
+         Choose seed coordinate within an object with a full structure and recommended to choose a threshold between 0.2 - 0.6.")
+  }
+  
+}
+
+server <- function(input, output, session) {
+    
+    # Saving image to local location so that it can be accessible 
+    observeEvent(input$myFile, {
+      inFile <- input$myFile
+      if (is.null(inFile))
+        return()
+      file.copy(inFile$datapath, file.path("c:/temp", inFile$name) )
+    })
+  
+    # Second tab (page) of the application, 
+    # shows chosen image with resolution and seed point,
+    # if chosen seed point is invalid, error message, 
+    # giving the valid range is shown.
   output$plot1 <- renderPlot({
-    
-    # function to resize image by scale factor factor, e.g. factor 2 --> 50% size of image
-    img_resizer <- function(img, factor){
-      reimage <- resize(img, dim(img)[1]/factor, dim(img)[2]/factor)
-      return(reimage)
-    }
-    
-    image <- load.image('C:/Users/kimnt/Documents/Y3/Project/Code/2021_Long COVID data files/ACUTE COVID_DIABETES-CONTROLS_ThT_before trypsin/D15_naive_ThT_04.jpg')
-    
-    # image resized
-    reimage <- img_resizer(image, input$sclrez)
+      
+    # load the upload image and resize
+    reimage <- get_reszimage(input$myFile, input$sclrez)
     
     grayim <- grayscale(reimage, method = "Luma", drop = TRUE)
     graydata <- as.data.frame(grayim)
     
     # choosing the seed
-    selected_point <- filter(graydata, x == input$x_seed_point & y == input$y_seed_point)
-    seed_greyval <- graydata[graydata$x == input$x_seed_point & graydata$y == input$y_seed_point, ][3]
-    # choosing the threshold
-    threshold <- 0.3
+    xs <- input$x_seed_point
+    ys <- input$y_seed_point
+    
+    selected_point <- filter(graydata, xs & ys)
+    seed_greyval <- graydata[graydata$x == xs & graydata$y == ys, ][3]
+
+    # error checking and validation
+    # checking if the seeds are in the image 
+    validate(
+      need(validator(xs, ys, dim(reimage)[1], 0), "Current x and y values are invalid")
+    )
     
     imgdata <- as.data.frame(reimage, wide="c") %>% mutate(rgb.val=rgb(c.1,c.2,c.3))
-    
-    # function that changes a specific pixels color to red, and prints current state 
-    # takes in the images RGB dataframe
-    # returns the dataframe with edited pixel
-    color_changer <- function(im_datafr, x_val, y_val){
-      # setting the specific pixel to red
-      im_datafr[im_datafr$x == x_val & im_datafr$y == y_val, ][6] <- input$col_choice
-      plot <- ggplot(im_datafr, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
-      
-      file_name <- paste(x_val, y_val, "_plot.jpg", sep = "")
-      ggsave(filename = file_name, plot = plot)
-      
-      return(im_datafr)
-    }
-    
-    imgdata <- color_changer(imgdata, input$x_seed_point, input$y_seed_point)
-    
+    imgdata <- color_changer(imgdata, xs, ys, input$col_choice)
     ggplot(imgdata, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
     
   })
   
-  
   output$plot2 <- renderPlot({
     
-    image <- load.image('C:/Users/kimnt/Documents/Y3/Project/Code/2021_Long COVID data files/ACUTE COVID_DIABETES-CONTROLS_ThT_before trypsin/D15_naive_ThT_04.jpg')
-    
-    # function to resize image by scale factor factor, e.g. factor 2 --> 50% size of image
-    img_resizer <- function(img, factor){
-      reimage <- resize(img, dim(image)[1]/factor, dim(img)[2]/factor)
-      return(reimage)
-    }
-    
-    # image resized to 14%
-    reimage <- img_resizer(image, input$sclrez)
+    # load the upload image and resize
+    reimage <- get_reszimage(input$myFile, input$sclrez)
     
     grayim <- grayscale(reimage, method = "Luma", drop = TRUE)
     graydata <- as.data.frame(grayim)
     
     # choosing the seed
-    selected_point <- filter(graydata, x == input$x_seed_point & y == input$y_seed_point)
-    seed_greyval <- graydata[graydata$x == input$x_seed_point & graydata$y == input$y_seed_point, ][3]
+    xs <- input$x_seed_point
+    ys <- input$y_seed_point
+    
+    selected_point <- filter(graydata, x == xs & y == ys)
+    seed_greyval <- graydata[graydata$x == xs & graydata$y == ys, ][3]
     # choosing the threshold
     threshold <- input$thres
     
+    # getting the outline colour
+    outline_col <- input$col_choice
+    
     imgdata <- as.data.frame(reimage, wide="c") %>% mutate(rgb.val=rgb(c.1,c.2,c.3))
-    
-    # function that changes a specific pixels color to red, and prints current state 
-    # takes in the images RGB dataframe
-    # returns the dataframe with edited pixel
-    color_changer <- function(im_datafr, x_val, y_val){
-      # setting the specific pixel to red
-      im_datafr[im_datafr$x == x_val & im_datafr$y == y_val, ][6] <- input$col_choice
-      plot <- ggplot(im_datafr, aes(x,y))+geom_raster(aes(fill=rgb.val))+scale_fill_identity()
-      
-      file_name <- paste(x_val, y_val, "_plot.jpg", sep = "")
-      ggsave(filename = file_name, plot = plot)
-      
-      return(im_datafr)
-    }
-    
-    imgdata <- color_changer(imgdata, input$x_seed_point, input$y_seed_point)
-    
-    # indicator for CORNER pointer translation
-    # only 4 possible corners, so each quadrant is like top, bottom: left or right
-    # each CORNER pointer moves onto THREE new pointers, one corner, two edges
-    # if the pointer goes left, we will move the pixel one unit left, so by -1 (on x-axis)
-    # similar for right, up, and down (up and down is on the y-axis)
-    # take in x and y values, return pointer (x,y) with new x and y values
-    corner_pointers <- function(quadrant, x_val, y_val){
-      # top left, movement up and left
-      if (quadrant == 1){
-        CORNER_pointer <- c(x_val-1, y_val+1)
-        EDGE_pointer1 <- c(x_val, y_val+1)
-        EDGE_pointer2 <- c(x_val-1, y_val)
-        # top right, movement up and right
-      } else if (quadrant == 2){
-        CORNER_pointer <- c(x_val+1, y_val+1) 
-        EDGE_pointer1 <- c(x_val, y_val+1)
-        EDGE_pointer2 <- c(x_val+1, y_val)
-        # bottom right, movement down and right
-      } else if (quadrant == 3){
-        CORNER_pointer <- c(x_val+1, y_val-1)
-        EDGE_pointer1 <- c(x_val, y_val-1)
-        EDGE_pointer2 <- c(x_val+1, y_val)
-        # bottom left, movement down and left 
-      } else {
-        CORNER_pointer <- c(x_val-1, y_val-1)
-        EDGE_pointer1 <- c(x_val, y_val-1)
-        EDGE_pointer2 <- c(x_val-1, y_val)
-      }
-      
-      pointers_list <- list(CORNER_pointer, EDGE_pointer1, EDGE_pointer2)
-      return(pointers_list)
-    }
-    
-    # function for EDGE pointers movement
-    # they can only go up, down, left or right
-    edge_pointers <- function(direction, x_val, y_val){
-      if (direction == "up"){
-        pointer <- c(x_val, y_val+1)
-      } else if (direction == "down") {
-        pointer <- c(x_val, y_val-1)
-      } else if (direction == "right") {
-        pointer <- c(x_val+1, y_val)
-      } else if (direction == "left") {
-        pointer <- c(x_val-1, y_val)
-      }
-      return(pointer)
-    }
+    imgdata <- color_changer(imgdata, xs, ys, outline_col)
     
     # recurrence relation to assign each pixel to a group (seed or not)
     # if it is, add it to the seed set
@@ -223,23 +301,33 @@ server <- function(input, output, session) {
     CORNER_q3 <- corner_pointers(3, x_val, y_val)
     CORNER_q4 <- corner_pointers(4, x_val, y_val) # CORNER_q4[[1]] is the corner pointer
     
+
     # checking if the greyscale value is close by threshold value
-    checker_edge <- function(pointer, direction, data){
+    checker_edge <- function(pointer, direction, data, col){
       x_val <- pointer[1]
       y_val <- pointer[2]
       
+      # error checking and validation
+      # checking if an outline can be produced with the inputs
+      validate(
+        need(validator(x_val, y_val, dim(reimage)[1], 1), "Invalid inputs")
+      )
+      
       # getting the row from the dataframe with these coordinates
       row_data <- graydata[graydata$x == x_val & graydata$y == y_val, ]
+      
+
+      
       # getting the gayscale value of the pixel
       gray_val <- row_data[3]
       
       
       if (abs(seed_greyval - gray_val) < threshold){
         pointer <- edge_pointers(direction, x_val, y_val)
-        data <- checker_edge(pointer, direction, data)
+        data <- checker_edge(pointer, direction, data, col)
         
       } else {
-        data <- color_changer(data, x_val, y_val)
+        data <- color_changer(data, x_val, y_val, col)
         
       }
       
@@ -250,7 +338,7 @@ server <- function(input, output, session) {
     # the diagonal, and either L/R or Up/Down, dependant on its quadrant
     # note the corner will always move in the same quadrant
     # take in pointers coming out of the corner
-    checker_corner <- function(pointer_list, direction, data){
+    checker_corner <- function(pointer_list, direction, data, col){
       
       # case one, the edge pointers
       
@@ -271,42 +359,51 @@ server <- function(input, output, session) {
         updown <- "down"
       }
       
-      data <- checker_edge(LR_pointer, LR, data)
-      data <- checker_edge(updown_pointer, updown, data)
+      data <- checker_edge(LR_pointer, LR, data, col)
+      data <- checker_edge(updown_pointer, updown, data, col)
       
       # case two, the corner specifically 
       corner_pointer <- pointer_list[[1]]
       x_val <- corner_pointer[1]
       y_val <- corner_pointer[2]
       
+      # error checking and validation
+      # checking if an outline can be produced with the inputs
+      validate(
+        need(validator(x_val, y_val, dim(reimage)[1], 1), "Invalid inputs")
+      )
+            
       # getting the row from the dataframe with these coordinates
       row_data <- graydata[graydata$x == x_val & graydata$y == y_val, ]
+
+      
       # getting the gayscale value of the pixel
       gray_val <- row_data[3]
       
       if (abs(seed_greyval - gray_val) < threshold){
         corner_pointer <- corner_pointers(direction, x_val, y_val)
-        data <- checker_corner(corner_pointer, direction, data)
+        data <- checker_corner(corner_pointer, direction, data, col)
         
       } else {
-        data <- color_changer(data, x_val, y_val)
+        data <- color_changer(data, x_val, y_val, col)
       }
       
       return(data)
       
     }
     
+    # running the algorithm with the 8 initial pointers
     
-    imgdata <- checker_corner(CORNER_q1, 1, imgdata)
-    imgdata <- checker_edge(EDGE_up, "up", imgdata)
-    imgdata <- checker_corner(CORNER_q2, 2, imgdata)
-    imgdata <- checker_edge(EDGE_right, "right", imgdata)
-    imgdata <- checker_corner(CORNER_q3, 3, imgdata)
-    imgdata <- checker_edge(EDGE_down, "down", imgdata)
-    imgdata <- checker_corner(CORNER_q4, 4, imgdata)
-    imgdata <- checker_edge(EDGE_left, "left", imgdata)
+    imgdata <- checker_corner(CORNER_q1, 1, imgdata, outline_col)
+    imgdata <- checker_edge(EDGE_up, "up", imgdata, outline_col)
+    imgdata <- checker_corner(CORNER_q2, 2, imgdata, outline_col)
+    imgdata <- checker_edge(EDGE_right, "right", imgdata, outline_col)
+    imgdata <- checker_corner(CORNER_q3, 3, imgdata, outline_col)
+    imgdata <- checker_edge(EDGE_down, "down", imgdata, outline_col)
+    imgdata <- checker_corner(CORNER_q4, 4, imgdata, outline_col)
+    imgdata <- checker_edge(EDGE_left, "left", imgdata, outline_col)
     
-    ###### making the animation and saving it to the file
+    #making the animation and saving it to the file
     
     # getting the images that are saved in the file
     # plotting the images
