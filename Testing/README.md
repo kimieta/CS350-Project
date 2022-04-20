@@ -15,12 +15,11 @@ This folder provides images you can test the application with valid inputs. Thes
 
 > The raw R code is also provided in the _SGRraw.Rmd_ file, constraints will need to be manually changed in the code for testing images. 
 
-### Results 
+The resulting region of interest outlined in these images is also provided in this folder.
 
-before1.jpg
+#
 
-after1.jpg
 
-IM1.jpg
+### References
 
-IM2.jpg
+Pretorius, E., Venter, C., Laubscher, G.J. et al. Prevalence of readily detected amyloid blood clots in ‘unclotted’ Type 2 Diabetes Mellitus and COVID-19 plasma: a preliminary report. Cardiovasc Diabetol 19, 193 (2020). https://doi.org/10.1186/s12933-020-01165-7 
